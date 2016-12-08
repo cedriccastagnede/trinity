@@ -284,57 +284,47 @@ class TrinityAPI(object):
     ret['total']=len(hc_overview['hardware'][hardware])
     ret['list_unallocated']=list(set(hc_overview['hardware'][hardware])-c_nodes)
     ret['unallocated']=len(ret['list_unallocated'])  
+    ret['list_allocated']=list(c_nodes.intersection(set(hc_overview['hardware'][hardware])))
     ret['allocated']=ret['total']-ret['unallocated']   
 
     return ret    
 
-  def cluster_change_nodes(self,cluster,old_list,hw_dict):
+  def cluster_change_nodes(self,cluster,old_list):
     self.authenticate()
     ret={}
     ret['statusOK']=False
     xcat_cluster=self.vc+cluster
     if not(self.has_access and self.is_admin):
       return ret 
-    node_list=old_list[:]
+
+    # copy the list of desired nodes (node types are not accounted for)
+    node_list = self.specs['nodes'][:]
+
+    # construct a list of nodes to remove from the cluster
     subs_list=[]
+    for node in old_list:
+      if node not in node_list:
+        subs_list.append(node)
+
+    # construct a list of nodes to add to the cluster
     adds_list=[]
-    for hardware in hw_dict:
-      if hardware not in self.specs:
-        for node in hw_dict[hardware]:
-          node_list.remove(node)
-          subs_list.append(node)
-    for hardware in self.specs:
-      d_nodes=self.specs[hardware]
-      if hardware in hw_dict:
-        e_nodes=hw_dict[hardware]
-        if len(e_nodes) == d_nodes: 
-          continue
-        elif len(e_nodes) > d_nodes:
-          sub_num=len(e_nodes)-d_nodes
-          subs=e_nodes[-sub_num:]
-          for node in subs:
-            node_list.remove(node)
-            subs_list.append(node)
-        else:
-          add_num=d_nodes-len(e_nodes)
-          h_nodes=self.hardware_nodes(hardware)
-          if add_num > h_nodes['unallocated']:
-            ret['error']=self.no_nodes
-            return ret
-          else:
-            for node in h_nodes['list_unallocated'][:add_num]:
-              node_list.append(node)
-              adds_list.append(node)
-      else:
-        h_nodes=self.hardware_nodes(hardware)
-        # Not DRY
-        if d_nodes > h_nodes['unallocated']:
-          ret['error']=self.no_nodes
-          return ret
-        else:
-          for node in h_nodes['list_unallocated'][:d_nodes]:
-            node_list.append(node)
-            adds_list.append(node)
+    for node in node_list:
+      if node not in old_list:
+        adds_list.append(node)
+
+    # ensure that all nodes in adds_list are unallocated
+    unallocated = []
+    hardware_list = self.detailed_overview()['hardware'].keys()
+
+    for hardware in hardware_list:
+      unallocated.extend(self.hardware_nodes(hardware)['list_unallocated'])
+
+    for node in adds_list:
+      if node not in unallocated:
+        ret['error'] = self.no_nodes
+        return ret
+    
+    # update xcat db
     if adds_list or subs_list:
       ret['change']=True
       if node_list:
@@ -439,6 +429,7 @@ def hardware_overview(version=1):
     h_overview[hardware]['total']=len(hc_overview['hardware'][hardware])
     h_overview[hardware]['list_unallocated']=list(set(hc_overview['hardware'][hardware])-c_nodes)
     h_overview[hardware]['unallocated']=len(h_overview[hardware]['list_unallocated'])  
+    h_overview[hardware]['list_allocated']=list(c_nodes.intersection(set(hc_overview['hardware'][hardware])))
     h_overview[hardware]['allocated']=h_overview[hardware]['total']-h_overview[hardware]['unallocated']   
   return h_overview    
   
@@ -453,9 +444,12 @@ def cluster_overview(version=1):
   for cluster in hc_overview['cluster']:
     c_overview[cluster]={}
     c_overview[cluster]['hardware']={}
+    c_overview[cluster]['hardware_list']={}
     for hardware in hc_overview['hardware']:
-      amount=len(set(hc_overview['cluster'][cluster]).intersection(set(hc_overview['hardware'][hardware])))
+      allocated = list(set(hc_overview['cluster'][cluster]).intersection(set(hc_overview['hardware'][hardware])))
+      amount=len(allocated)
       c_overview[cluster]['hardware'][hardware]=amount
+      c_overview[cluster]['hardware_list'][hardware]=allocated
   return c_overview   
 
 
@@ -495,10 +489,12 @@ def show_cluster(cluster,version=1):
     ret={'error':req.no_access}
     return ret
   hc_overview=req.detailed_overview()
-  c_overview={'hardware':{}}
+  c_overview={'hardware':{}, 'hardware_list': {}}
   for hardware in hc_overview['hardware']:
-    amount=len(set(hc_overview['cluster'][cluster]).intersection(set(hc_overview['hardware'][hardware])))
+    allocated = list(set(hc_overview['cluster'][cluster]).intersection(set(hc_overview['hardware'][hardware])))
+    amount=len(allocated)
     c_overview['hardware'][hardware]=amount
+    c_overview['hardware_list'][hardware]=allocated
   return c_overview   
 
 @trinity.get('/trinity/v<version:float>/hardwares/<hardware>')
@@ -516,6 +512,7 @@ def show_hardware(hardware,version=1):
   h_overview['total']=len(hc_overview['hardware'][hardware])
   h_overview['list_unallocated']=list(set(hc_overview['hardware'][hardware])-c_nodes)
   h_overview['unallocated']=len(h_overview['list_unallocated'])  
+  h_overview['list_allocated']=list(c_nodes.intersection(set(hc_overview['hardware'][hardware])))
   h_overview['allocated']=h_overview['total']-h_overview['unallocated']   
   return h_overview    
 
@@ -914,8 +911,7 @@ def show_monitoring_info(version=1):
 
 def create_cluster(req,cluster):
   old_list=[]
-  hw_dict={}
-  ret=req.cluster_change_nodes(cluster,old_list,hw_dict)
+  ret=req.cluster_change_nodes(cluster,old_list)
   return ret
 
 def update_cluster(req,cluster):
@@ -923,9 +919,7 @@ def update_cluster(req,cluster):
   r=req.group_nodes(name=cluster,startkey=req.vc) 
   if not r['statusOK']: return ret
   old_list=r['nodes']
-  r=req.cluster_details(cluster)
-  hw_dict=r['hardware']
-  ret=req.cluster_change_nodes(cluster,old_list,hw_dict)
+  ret=req.cluster_change_nodes(cluster,old_list)
   return ret 
 
 def copy_with_excludes(src_root,dest_root,excludes=[]):

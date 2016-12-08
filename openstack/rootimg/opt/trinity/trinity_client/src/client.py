@@ -3,6 +3,7 @@ import os
 from ConfigParser import SafeConfigParser
 import json
 import requests
+import hostlist
 
 #conf_file=os.path.join(os.path.dirname(os.path.abspath(__file__)),'trinity_client.conf')
 conf_file='/etc/trinity/trinity_client.conf'
@@ -85,6 +86,7 @@ class Client(object):
       res=r[hardware]
       datum['total']=res['total']
       datum['used']=res['allocated']
+      datum['unallocated'] = hostlist.collect_hostlist(res['list_unallocated'])
       datum['hardware']=hardware
       data.append(datum)
     return data
@@ -97,20 +99,27 @@ class Client(object):
       hardwares=r[cluster]['hardware']
       datum={'cluster':cluster}
       for hardware in hardwares: 
-        datum[hardware]=r[cluster]['hardware'][hardware]
+        datum[hardware]=hostlist.collect_hostlist(r[cluster]['hardware_list'][hardware])
       data.append(datum)
     return data
 
-  def cluster_hardware(self,cluster):
+  def cluster_hardware(self,cluster, summary=False):
     r = requests.get(self.trinity_prefix+'/clusters/'+cluster, data=json.dumps(self.payload), headers=self.headers)
     data=[]
     res=r.json()
+    all_nodes = []
     for key,value in res['hardware'].items():
       datum={}
       datum['type']=key
       datum['amount']=value
-      data.append(datum) 
-    return data
+      datum['list']=hostlist.collect_hostlist(res['hardware_list'][key])
+      data.append(datum)
+      all_nodes.extend(res['hardware_list'][key])
+
+    if summary:
+      return hostlist.collect_hostlist(all_nodes)
+    else:
+      return data
 
   def cluster_config(self,cluster):
 #  Dummy
@@ -121,6 +130,9 @@ class Client(object):
 
 
   def cluster_modify(self,cluster,specs):
+    for spec in specs:
+      specs[spec] = hostlist.expand_hostlist(specs[spec])
+
     self.payload.update({'specs':specs})
     r = requests.put(self.trinity_prefix+'/clusters/'+cluster, data=json.dumps(self.payload), headers=self.headers)
     return r.json() 

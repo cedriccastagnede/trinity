@@ -13,7 +13,10 @@
       <div class="d3_quota_bar">
       <div class="d3_pie_chart_usage" data-used="{% widthratio hardware.used hardware.total 100 %}"></div>
        <strong>{% trans hardware.hardware %} <br />
-         {% blocktrans with used=hardware.used available=hardware.total %}Used <span> {{ used }} </span> of <span> {{ available }} </span>{% endblocktrans %}
+         {% blocktrans with used=hardware.used available=hardware.total %}Used: <span> {{ used }} </span> of <span> {{ available }} </span> <br/>{% endblocktrans %}
+         {% if hardware.unallocated %}
+           {% blocktrans with free=hardware.unallocated %}Free: <span> {{ free }} </span>{% endblocktrans %}
+         {% endif %}
        </strong>
       </div>
     {% endfor %}

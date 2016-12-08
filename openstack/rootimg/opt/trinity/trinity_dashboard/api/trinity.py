@@ -68,20 +68,31 @@ def hardwares_detail(request):
   data=c.hardwares_detail()
   return data  
 
-def cluster_hardware(request,cluster=None):
+def cluster_hardware(request,cluster=None, summary=False):
   c=trinityclient(request)
   if not cluster:
     cluster=request.user.tenant_name
   clusters_list=c.clusters_list()
-  if cluster not in clusters_list:
-    hardwares=[]  
+
+  if not summary:
+
+    if cluster not in clusters_list:
+      hardwares=[]  
+    else:
+      hardwares=c.cluster_hardware(cluster)
+    data=[]
+    for hardware in hardwares:
+      datum=type('ClusterHardware',(object,),hardware)
+      data.append(datum)
+    return data
+
   else:
-    hardwares=c.cluster_hardware(cluster)
-  data=[]
-  for hardware in hardwares:
-    datum=type('ClusterHardware',(object,),hardware)
-    data.append(datum)
-  return data  
+
+    if cluster not in clusters_list:
+      nodes = ''
+    else:
+      nodes = c.cluster_hardware(cluster, summary)
+    return nodes
  
 def cluster_modify(request,data):
   c=trinityclient(request)
@@ -94,6 +105,7 @@ def cluster_modify(request,data):
   for key,value in data.items():
     if key not in unused_keys:
       specs[key] = value
+
   modify=c.cluster_modify(cluster,specs)
   return modify['statusOK']
  

@@ -31,6 +31,9 @@ def get_type(datum):
 def get_amount(datum):
   return datum.amount
 
+def get_list(datum):
+  return datum.list
+
 class OverviewTable(tables.DataTable):
 #  The first argument in the Column instance creator (the 'transform')
 #  is either an attribute of a single item of the iterable 'data' (--> the 
@@ -59,7 +62,8 @@ class OverviewTable(tables.DataTable):
     columns_unsorted.append(('status',status))
     for hardware in hardwares:
       key=hardware
-      value=tables.Column(hardware, verbose_name=_(hardware), summation='sum')
+      value=tables.Column(hardware, verbose_name=_(hardware),
+                          empty_value='-')
       value.table=self
       columns_unsorted.append((key,value))
     for key, value in self.columns.items():

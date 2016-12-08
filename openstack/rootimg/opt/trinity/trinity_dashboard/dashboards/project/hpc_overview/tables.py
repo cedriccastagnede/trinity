@@ -13,8 +13,9 @@ from horizon import tables
 
 
 class HardwareTable(tables.DataTable):
-  type = tables.Column('type', verbose_name=_("Node Type"))
+  type = tables.Column('type', verbose_name=_("Type"))
   amount = tables.Column('amount', verbose_name=_("Amount"))
+  nodes = tables.Column('list', verbose_name=_("Node list"))
 
   def get_object_id(self,obj):
     return obj.type
